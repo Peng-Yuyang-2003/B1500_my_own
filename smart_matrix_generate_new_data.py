@@ -32,7 +32,9 @@ def sci_notation(y, pos):
 # 1. 从CSV提取矩阵
 # ----------------------------
 importfile = r"E:\融合2\实验数据\2025-12-13\1-25-7_merged_clean.csv"
-matrix = pd.read_csv(importfile, header=None, low_memory=False).to_numpy()
+# 读取CSV并强制转换为数值类型，无法转换的值会变为NaN
+matrix_df = pd.read_csv(importfile, header=None, low_memory=False)
+matrix = matrix_df.apply(pd.to_numeric, errors='coerce').to_numpy()
 
 groups = matrix.shape[1] // 2
 print(f"读取到 {groups} 条曲线，矩阵 shape = {matrix.shape}")

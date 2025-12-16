@@ -18,7 +18,7 @@ def process_directory(directory_path):
 
 if __name__ == "__main__":
     # 在这里设置你要处理的文件夹路径
-    target_directory = r"E:\融合2\实验数据\\2025-12-13"
+    target_directory = r"E:\融合2\实验数据\2025-12-05(1)"
     
     if os.path.isdir(target_directory):
         process_directory(target_directory)

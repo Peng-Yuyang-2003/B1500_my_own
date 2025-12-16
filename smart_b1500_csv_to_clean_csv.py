@@ -11,7 +11,7 @@ def process_csv(importfile):
     """
     max_col = 7  # 最大列数
     x_col = 1    # x轴数据所在列
-    y_col = 3    # y轴数据所在列
+    y_col = 5    # y轴数据所在列
 
     column_names = [f"col{i}" for i in range(max_col)]
     try:

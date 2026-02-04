@@ -21,5 +21,5 @@ def plot_all_csv_in_folder(folder_path, show_plot=False):
 
 if __name__ == "__main__":
     # 你可以在这里直接填写路径，或者后续改成 argparse
-    folder = r"E:\\融合2\\实验数据\\2025-11-27"
+    folder = r"E:\融合2\实验数据\2025-12-05(1)"
     plot_all_csv_in_folder(folder)

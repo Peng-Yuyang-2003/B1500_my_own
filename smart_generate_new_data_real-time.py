@@ -31,7 +31,7 @@ def sci_notation(y, pos):
 # ----------------------------
 # 1. 从CSV提取矩阵
 # ----------------------------
-importfile = r"real-time-newdata.csv"
+importfile = r"E:\融合2\实验数据\2025-12-13\1-25-7-200cycles-not-end-first-group_clean.csv"
 matrix = pd.read_csv(importfile, header=None).to_numpy()
 groups = matrix.shape[1] // 2
 print(f"读取到 {groups} 条曲线，矩阵 shape = {matrix.shape}")

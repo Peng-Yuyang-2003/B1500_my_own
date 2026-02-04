@@ -19,7 +19,7 @@ matplotlib.rcParams['axes.unicode_minus'] = True              # 允许使用 Uni
 max_col = 7  # 最大列数
 x_col = 1    # x轴数据所在列
 y_col = 6    # y轴数据所在列
-importfile = r"E:\融合2\实验数据\2025-6-13\01\1.csv"
+importfile = r"E:\融合2\实验数据\2025-12-05(1)\10 cycle_clean.csv"
 
 column_names = [f"col{i}" for i in range(max_col)]
 df = pd.read_csv(

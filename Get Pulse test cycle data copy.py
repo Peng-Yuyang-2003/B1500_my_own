@@ -1,14 +1,14 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 # 指令
-importfile = "E:\融合2\实验数据\SW_1T1R_forming [(1) ; 11_27_2025 4_04_05 PM].csv"#读取文件路径
+importfile = r"E:\融合2\实验数据\2025-12-05(1)\pulse_set5-1.csv"#读取文件路径
 export_flag = 0 # 是否执行导出代码的旗帜
-exportfile = 'E:/python/B1500_data_processor/export_temp.xlsx' #导出文件路径
+exportfile = r'E:/python/B1500_data_processor/export_temp.xlsx' #导出文件路径
 max_col = 10 # 存有数据的地方的列数
-x1_col = 4 # x轴数据所在列
-y1_col = 5 # y轴数据所在列
-x2_col = 1 # x2轴数据所在列
-y2_col = 3 # y2轴数据所在列
+x1_col = 2 # x轴数据所在列
+y1_col = 4 # y轴数据所在列
+x2_col = 3 # x2轴数据所在列
+y2_col = 5 # y2轴数据所在列
 # 读文件
 
 # 定义与最大列数匹配的列名（例如 col0 到 col3，共4列），也就意味着哪些列数不为4列的行将被跳过

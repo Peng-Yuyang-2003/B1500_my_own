@@ -108,7 +108,7 @@ class DataPlotter:
 # 直接运行 data_plotter.py 时自动绘图
 # -------------------------------
 if __name__ == "__main__":
-    test_file = r"E:\\融合2\\实验数据\\2025-11-27\SW_1T1R_READ [(10) ; 11_27_2025 5_05_53 PM].csv"
+    test_file = r"E:\融合2\实验数据\2025-12-05(1)\pulse_set5-2.csv"
     print(f"Running standalone mode, plotting: {test_file}")
 
     plotter = DataPlotter()

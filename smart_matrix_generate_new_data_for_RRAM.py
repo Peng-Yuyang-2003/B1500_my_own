@@ -13,6 +13,7 @@ import warnings
 #重要参数
 noise_level = 1E-11
 smooth_level = 1E-10
+ICC = 1E-5
 # ----------------------------
 # 基本设置（字体/忽略特定警告）
 # ----------------------------
@@ -31,7 +32,8 @@ def sci_notation(y, pos):
 # ----------------------------
 # 1. 从CSV提取矩阵
 # ----------------------------
-importfile = r"E:\融合2\实验数据\2026-1-6-mosdunhuaqian\Trans [(5) ; 2026_1_6 12_18_37]-D1_clean.csv"
+#importfile = r"E:\融合2\实验数据\2025-12-13\1-25-7_merged_clean.csv"
+importfile = r"E:\融合2\实验数据\2026-1-8\RESET_0-(-3)-0 [(5) ; 2026_1_8 18_37_50]-D6_clean.csv"
 # 读取CSV并强制转换为数值类型，无法转换的值会变为NaN
 matrix_df = pd.read_csv(importfile, header=None, low_memory=False)
 matrix = matrix_df.apply(pd.to_numeric, errors='coerce').to_numpy()
@@ -59,7 +61,7 @@ def plot_all():
         y = matrix[:, 2*i+1]
         if pd.isna(x).all() and pd.isna(y).all():
             continue
-        line, = ax.plot(x, y, picker=5, label=f"曲线{i}", linewidth=1.0, color="blue")
+        line, = ax.plot(x, y, picker=5, linewidth=1.0, color="blue")
         new_lines.append(line)
     return new_lines
 
@@ -169,8 +171,198 @@ def save(event):
     folder = "B1500_data_storage"
     os.makedirs(folder, exist_ok=True)  # 如果文件夹不存在则创建
     fname = os.path.join(folder, f"filtered_matrix_{n_curves}curves_generated_{timestamp}.csv")
-    np.savetxt(fname, matrix, delimiter=",", fmt='%s')
-    print(f"已保存到 {fname}")
+
+def save_resistance(event):
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    folder = "B1500_data_storage"
+    os.makedirs(folder, exist_ok=True)
+
+    resistances = []
+
+    n_cols = matrix.shape[1]
+
+    for col in range(0, n_cols, 2):
+        V = matrix[:, col]
+        I = matrix[:, col + 1]
+
+        # 1. 如果电压列中大部分为负数，跳过
+        if np.sum(V < 0) > len(V) / 2:
+            continue
+
+        # 2. 找到最接近 +0.1 V 的前两个索引
+        # 2. 找到最接近 +0.1 V 的前两个索引（排除 NaN / Inf）
+        mask = np.isfinite(V)
+        V_valid = V[mask]
+
+        if V_valid.size < 2:
+            continue  # 有效点不足两个，跳过该曲线
+
+        # 与 0.1 V 的差值
+        diff = np.abs(V_valid - 0.1)
+
+        # 取差值最小的两个
+        idx_valid_2 = np.argsort(diff)[:2]
+
+        # 映射回原始 V 的索引
+        idx_2 = np.where(mask)[0][idx_valid_2]
+        I_at_01 = I[idx_2[0]]
+
+        # 3. 电流为 0 或异常，跳过
+        if I_at_01 == 0 or np.isnan(I_at_01) or np.isinf(I_at_01):
+            continue
+
+        # 4. 计算电阻
+        R = 0.1 / I_at_01
+        resistances.append(R)
+        I_at_01 = I[idx_2[1]]
+
+        # 3. 电流为 0 或异常，跳过
+        if I_at_01 == 0 or np.isnan(I_at_01) or np.isinf(I_at_01):
+            continue
+
+        # 4. 计算电阻
+        R = 0.1 / I_at_01
+        resistances.append(R)
+
+    resistances = np.array(resistances)
+
+    # ===============================
+    # 保存电阻 CSV
+    # ===============================
+    csv_name = os.path.join(
+        folder, f"resistance_values_{timestamp}.csv"
+    )
+    np.savetxt(
+        csv_name,
+        resistances.reshape(-1, 1),
+        delimiter=",",
+        header="Resistance(Ohm)",
+        comments="",
+        fmt="%.6e"
+    )
+
+    print(f"电阻数据已保存到 {csv_name}")
+
+    # ===============================
+    # 绘制柱状分布图（Histogram）
+    # ===============================
+    # 先清洗数据（必须）
+    resistances = np.array(resistances)
+    resistances = resistances[np.isfinite(resistances) & (resistances > 0)]
+    #计算中位数，并把大于中位数的所有数求平均，把小于中位数的所有数求平均，这三个数都打印出来
+    median_R = np.median(resistances)
+    mean_R_above_median = np.mean(resistances[resistances > median_R])
+    mean_R_below_median = np.mean(resistances[resistances < median_R])
+    print(f"电阻中位数: {median_R:.3e} Ohm")
+    print(f"电阻大于中位数的平均值: {mean_R_above_median:.3e} Ohm")
+    print(f"电阻小于中位数的平均值: {mean_R_below_median:.3e} Ohm") 
+
+    logR = np.log10(resistances)
+
+    plt.figure(figsize=(6, 4))
+    plt.hist(logR, bins=100)
+    plt.xlabel("log10(Resistance / Ohm)")
+    plt.ylabel("Count")
+    plt.title("Resistance Distribution at 0.1 V")
+    plt.grid(True, linestyle="--", alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+from datetime import datetime
+
+def save_setvoltage(event):
+    """
+    功能：
+    1. 遍历矩阵的列（假设电压列在偶数索引，电流列在奇数索引）。
+    2. 对于大部分为正数的电压列，找到对应电流列中第一个到达电流最大值的位置。
+    3. 记录该位置的电压值，保存到 CSV 文件。
+    4. 计算电压值的平均值。
+    5. 绘制正常坐标轴的柱状图。
+    """
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    folder = "B1500_data_storage"
+    os.makedirs(folder, exist_ok=True)
+
+    setvoltages = []  # 存储找到的电压值
+
+    n_cols = matrix.shape[1]
+
+    for col in range(0, n_cols, 2):
+        V = matrix[:, col]
+        I = matrix[:, col + 1]
+
+        # 1. 如果电压列中大部分为负数，跳过
+        if np.sum(V < 0) > len(V) / 2:
+            continue
+
+        # 2. 找到电流列的最大值（排除 NaN/Inf）
+        mask = np.isfinite(I)
+        I_valid = I[mask]
+        if I_valid.size == 0:
+            continue  # 没有有效电流数据，跳过
+
+        I_max = np.max(I_valid)
+        if np.isnan(I_max) or np.isinf(I_max):
+            continue
+
+        # 3. 找到第一个到达电流最大值的位置（在原始 I 中）
+        # 注意：由于可能存在多个点等于最大值，取第一个
+        idx_max = np.argmax(I == I_max)
+        if idx_max >= len(V):
+            continue  # 索引越界保护
+
+        V_at_I_max = V[idx_max]
+
+        # 4. 检查电压值是否有效
+        if np.isnan(V_at_I_max) or np.isinf(V_at_I_max):
+            continue
+
+        setvoltages.append(V_at_I_max)
+
+    setvoltages = np.array(setvoltages)
+
+    # ===============================
+    # 保存电压 CSV
+    # ===============================
+    csv_name = os.path.join(
+        folder, f"setvoltage_values_{timestamp}.csv"
+    )
+    np.savetxt(
+        csv_name,
+        setvoltages.reshape(-1, 1),
+        delimiter=",",
+        header="SetVoltage(V)",
+        comments="",
+        fmt="%.6e"
+    )
+    print(f"电压数据已保存到 {csv_name}")
+
+    # ===============================
+    # 计算平均值
+    # ===============================
+    if len(setvoltages) > 0:
+        avg_voltage = np.mean(setvoltages)
+        print(f"电压平均值: {avg_voltage:.6f} V")
+    else:
+        avg_voltage = np.nan
+        print("未找到有效的电压数据，无法计算平均值")
+
+    # ===============================
+    # 绘制柱状图（正常坐标轴）
+    # ===============================
+    if len(setvoltages) > 0:
+        plt.figure(figsize=(6, 4))
+        plt.hist(setvoltages, bins=20)
+        plt.xlabel("Set Voltage (V)")
+        plt.ylabel("Count")
+        plt.title("Set Voltage Distribution at First Current Maximum")
+        plt.grid(True, linestyle="--", alpha=0.5)
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("没有有效数据可绘制柱状图")
 
 def toggle_scale(event):
     if ax.get_yscale() == "linear":
@@ -184,7 +376,7 @@ def toggle_scale(event):
         print("切换到普通坐标")
     fig.canvas.draw_idle()
 
-def select_valid_pair(matrix, max_trials=50, threshold=0.01, factor=100):
+def select_valid_pair(matrix, max_trials=50, threshold=0.1, factor=100):
     """
     选择一对合格的曲线索引 (idx1, idx2)，最多尝试 max_trials 次
     threshold: 允许不符合的比例 (默认 0.1 = 10%)
@@ -237,10 +429,14 @@ def augment_curve(event):
     #在jump>1时，给Y1、Y2中小的那个数乘上jump_magnitude的10次方
     adjustment = np.where(Y1 < Y2, np.exp(jump_magnitude), 1) * np.where(Y2 < Y1, np.exp(jump_magnitude), 1)
     #Y_new = f * Y1+ Y2 * (1 - f) + noise
-    Y_new = f * np.where((Y1 < Y2)&(Y2 < smooth_level), Y1*np.exp(jump_magnitude), Y1)+ np.where((Y2 < Y1)&(Y1 < smooth_level), Y2*np.exp(jump_magnitude), Y2) * (1 - f) + noise
+    term1 = f * np.where((Y1 < Y2) & (Y2 < smooth_level), Y1 * np.exp(jump_magnitude), Y1)
+    term2 = (1 - f) * np.where((Y2 < Y1) & (Y1 < smooth_level), Y2 * np.exp(jump_magnitude), Y2)
+    Y_new_candidate = term1 + term2 + noise
+    mask_icc = np.isclose(Y1, ICC) | np.isclose(Y2, ICC)
+    Y_new = np.where(mask_icc, ICC, Y_new_candidate)
 
     matrix = np.column_stack([matrix, X, Y_new])
-    line, = ax.plot(X, Y_new, linestyle="--", picker=5, label=f"新曲线({kind})", color="blue")
+    line, = ax.plot(X, Y_new, linestyle="--", picker=5, label=f"新曲线({kind})", color="red")
     lines.append(line)
     ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
     fig.canvas.draw_idle()
@@ -275,25 +471,69 @@ def augment_multiple(event):
 # ----------------------------
 # 8. 按钮放置
 # ----------------------------
-ax_undo = plt.axes([0.02, 0.03, 0.12, 0.07])
+def delete_selected(event):
+    """删除当前高亮（linewidth>1.5）的曲线对应的 X/Y 列，并压缩矩阵避免空列"""
+    global matrix, lines
+    # 找到被高亮的曲线索引（lines 中的位置）
+    highlighted = [i for i, ln in enumerate(lines) if ln.get_linewidth() > 1.5]
+    if not highlighted:
+        print("未选中任何曲线以删除")
+        return
+
+    # 备份以便撤销
+    backup_state()
+
+    num_pairs = matrix.shape[1] // 2
+    # 生成保留的列索引（按原顺序保留未删除的对）
+    keep_cols = []
+    for p in range(num_pairs):
+        if p not in highlighted:
+            keep_cols.extend([2 * p, 2 * p + 1])
+
+    if len(keep_cols) == 0:
+        # 如果全部删除，变为空矩阵（保持行数）
+        matrix = np.empty((matrix.shape[0], 0))
+    else:
+        matrix = matrix[:, keep_cols]
+
+    # 重新绘制以反映删除结果
+    redraw()
+    print(f"已删除曲线索引: {highlighted}，矩阵更新为 {matrix.shape}")
+
+# 按钮放置（位于撤销按钮下方）
+ax_delete = plt.axes([0.90, 0.04, 0.10, 0.08])
+btn_delete = Button(ax_delete, '删除选中曲线')
+btn_delete.on_clicked(delete_selected)
+# ----------------------------
+ax_undo = plt.axes([0.02, 0.04, 0.12, 0.08])
 btn_undo = Button(ax_undo, '撤销')
 btn_undo.on_clicked(undo)
 
-ax_new = plt.axes([0.16, 0.03, 0.18, 0.07])
+ax_new = plt.axes([0.14, 0.04, 0.18, 0.08])
 btn_new = Button(ax_new, '新增曲线')
 btn_new.on_clicked(augment_curve)
 
-ax_batch = plt.axes([0.36, 0.03, 0.22, 0.07])
+ax_batch = plt.axes([0.32, 0.04, 0.22, 0.08])
 btn_batch = Button(ax_batch, '批量生成')
 btn_batch.on_clicked(augment_multiple)
 
-ax_save = plt.axes([0.60, 0.03, 0.18, 0.07])
+ax_save = plt.axes([0.54, 0.04, 0.18, 0.08])
 btn_save = Button(ax_save, '保存矩阵')
 btn_save.on_clicked(save)
 
-ax_toggle = plt.axes([0.80, 0.03, 0.18, 0.07])
+ax_toggle = plt.axes([0.72, 0.04, 0.18, 0.08])
 btn_toggle = Button(ax_toggle, '切换纵坐标')
 btn_toggle.on_clicked(toggle_scale)
+
+ax_save_re = plt.axes([0.72, 0.00, 0.18, 0.04])
+btn_save_re = Button(ax_save_re, '保存电阻值')
+btn_save_re.on_clicked(save_resistance)
+
+
+ax_save_set = plt.axes([0.54, 0.00, 0.18, 0.04])
+btn_save_set = Button(ax_save_set, '保存set电压')
+btn_save_set.on_clicked(save_setvoltage)
+
 
 # ----------------------------
 # 9. 事件绑定

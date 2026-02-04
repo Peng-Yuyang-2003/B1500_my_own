@@ -31,7 +31,7 @@ def sci_notation(y, pos):
 # ----------------------------
 # 1. 从CSV提取矩阵
 # ----------------------------
-importfile = r"E:\融合2\实验数据\2026-1-6-mosdunhuaqian\Trans [(5) ; 2026_1_6 12_18_37]-D1_clean.csv"
+importfile = r"E:\融合2\实验数据\2026-1-9-mosdunhuahou\Trans [(10) ; 2026_1_9 12_46_44]-d6_clean.csv"
 # 读取CSV并强制转换为数值类型，无法转换的值会变为NaN
 matrix_df = pd.read_csv(importfile, header=None, low_memory=False)
 matrix = matrix_df.apply(pd.to_numeric, errors='coerce').to_numpy()
@@ -69,6 +69,171 @@ ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
 ax.yaxis.set_major_formatter(ScalarFormatter())
 ax.ticklabel_format(style='plain', axis='y')
+
+# ----------------------------
+# 2. 计算关键值
+# ----------------------------
+def cal(event):
+    # =========================
+    # 可调物理参数（建议不要乱改）
+    # =========================
+    I_REF = 1e-9          # 固定电流法 Vth
+    I_SS_LOW = 1e-11      # SS 下限
+    I_SS_HIGH = 3e-9      # SS 上限
+    VG_WINDOW = 0.05      # Ion/Ioff 取值窗口 (V)
+    W   = 40e-6        # m
+    L   = 2e-6        # m
+    Vd  = 1         # V
+    Cox = 1.5e-2     # F/m^2  (例：12 nm HfO2 Cox = ε0*εr/tox 20*8.85e-12/12e-9)
+    gm_win  = 5       # gm 滑动窗口点数
+
+    ncols = matrix.shape[1]
+    ncurves = ncols // 2
+
+    print("=" * 110)
+    print("Curve | Vth@1e-9A(V) | SS(mV/dec) | Ion/Ioff | Imax(A) | mu_FE,max (cm^2/Vs)")
+    print("=" * 110)
+
+    for i in range(ncurves):
+        Vg = matrix[:, 2*i]
+        Id = matrix[:, 2*i + 1]
+
+        # ---------- 清洗数据 ----------
+        mask = (~pd.isna(Vg)) & (~pd.isna(Id))
+        Vg = np.asarray(Vg[mask], dtype=float)
+        Id = np.abs(np.asarray(Id[mask], dtype=float))
+
+        if len(Vg) < 20:
+            continue
+
+        # 排序（防止反向扫描造成插值错误）
+        idx = np.argsort(Vg)
+        Vg = Vg[idx]
+        Id = Id[idx]
+
+        # =========================
+        # 1. Vth —— 固定电流法
+        # =========================
+        Vth = np.nan
+        for k in range(len(Id) - 1):
+            if Id[k] < I_REF <= Id[k + 1]:
+                # 线性插值
+                Vth = Vg[k] + (I_REF - Id[k]) * \
+                      (Vg[k + 1] - Vg[k]) / (Id[k + 1] - Id[k])
+                break
+
+        # =========================
+        # 2. SS —— 受限亚阈值区
+        # =========================
+        SS = extract_SS_adaptive(Vg, Id,
+                                 I_noise=I_SS_LOW,
+                                 window=6,
+                                 r2_threshold=0.98)
+
+        # =========================
+        # 3. Ion / Ioff —— 固定 Vg
+        # =========================
+        Vg_on = np.max(Vg)
+        Vg_off = np.min(Vg)
+
+        Ion_mask = np.abs(Vg - Vg_on) < VG_WINDOW
+        Ioff_mask = np.abs(Vg - Vg_off) < VG_WINDOW
+
+        if np.any(Ion_mask) and np.any(Ioff_mask):
+            Ion = np.median(Id[Ion_mask])
+            Ioff = np.median(Id[Ioff_mask])
+            Ion_Ioff = Ion / Ioff if Ioff > 0 else np.nan
+        else:
+            Ion_Ioff = np.nan
+        # =========================
+        # 3. Imax —— 求最大电流
+        # =========================
+        Imax = np.max(Id)
+        # =========================
+        # 3. μFE_max —— 滑动窗口 Vg
+        # =========================
+        mu_FE_max = np.nan
+        valid = (Id > I_REF) & (Vg > Vth)
+
+        Vg_lin = Vg[valid]
+        Id_lin = Id[valid]
+
+        if len(Vg_lin) > gm_win:
+            gm_list = []
+            for k in range(len(Vg_lin) - gm_win):
+                dId = Id_lin[k+gm_win] - Id_lin[k]
+                dVg = Vg_lin[k+gm_win] - Vg_lin[k]
+                if dVg > 0:
+                    gm_list.append(dId / dVg)
+
+            if gm_list:
+                gm_max = np.max(gm_list)
+                mu_FE_max = gm_max * L / (W * Cox * Vd) * 1e4  # → cm^2/Vs
+
+        print(f"{i:5d} | {Vth:12.4f} | {SS:11.1f} | {Ion_Ioff:9.2e} | "
+              f"{Imax:8.2e} | {mu_FE_max:10.2f}")
+
+
+        # =========================
+        # 输出
+        # =========================
+        print(f"{i:5d} | {Vth:12.4f} | {SS:11.1f} | {Ion_Ioff:9.2e} | "
+        f"{Imax:8.2e} | {mu_FE_max:10.2f}")
+
+    print("=" * 110)
+
+def extract_SS_adaptive(Vg, Id,
+                        I_noise=5e-11,
+                        window=6,
+                        r2_threshold=0.98):
+    """
+    自适应亚阈值摆幅提取
+    返回 SS (mV/dec)，若无有效指数区则返回 np.nan
+    """
+    # 把Id整个向量前后颠倒，颠倒顺序对SS没有影响，因为扫描方向是双向的
+    #Id = Id[::-1]
+    #Vg = Vg[::-1]
+    #print(Id)
+    # 排除噪声区
+    mask = Id > I_noise
+    Vg = Vg[mask]
+    Id = Id[mask]
+
+    if len(Vg) < window + 2:
+        return np.nan
+
+    logId = np.log10(Id)
+
+    best_slope = None
+    best_r2 = 0
+
+    for i in range(len(Vg) - window + 1):
+        x = Vg[i:i + window]
+        y = logId[i:i + window]
+
+        # 线性拟合
+        coef = np.polyfit(x, y, 1)
+        y_fit = np.polyval(coef, x)
+
+        # R^2
+        ss_res = np.sum((y - y_fit) ** 2)
+        ss_tot = np.sum((y - np.mean(y)) ** 2)
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+
+        slope = coef[0]
+
+        # 只接受“足够线性 + 正斜率”
+        if r2 > r2_threshold and slope > 0:
+            # 选斜率最大的指数区
+            if best_slope is None or slope > best_slope:
+                best_slope = slope
+                best_r2 = r2
+
+    if best_slope is None:
+        return np.nan
+
+    SS = 1 / best_slope * 1e3  # mV/dec
+    return SS
 
 # ----------------------------
 # 3. 撤销历史
@@ -275,25 +440,29 @@ def augment_multiple(event):
 # ----------------------------
 # 8. 按钮放置
 # ----------------------------
-ax_undo = plt.axes([0.02, 0.03, 0.12, 0.07])
+ax_undo = plt.axes([0.00, 0.03, 0.08, 0.07])
 btn_undo = Button(ax_undo, '撤销')
 btn_undo.on_clicked(undo)
 
-ax_new = plt.axes([0.16, 0.03, 0.18, 0.07])
+ax_new = plt.axes([0.08, 0.03, 0.16, 0.07])
 btn_new = Button(ax_new, '新增曲线')
 btn_new.on_clicked(augment_curve)
 
-ax_batch = plt.axes([0.36, 0.03, 0.22, 0.07])
+ax_batch = plt.axes([0.24, 0.03, 0.16, 0.07])
 btn_batch = Button(ax_batch, '批量生成')
 btn_batch.on_clicked(augment_multiple)
 
-ax_save = plt.axes([0.60, 0.03, 0.18, 0.07])
+ax_save = plt.axes([0.40, 0.03, 0.16, 0.07])
 btn_save = Button(ax_save, '保存矩阵')
 btn_save.on_clicked(save)
 
-ax_toggle = plt.axes([0.80, 0.03, 0.18, 0.07])
+ax_toggle = plt.axes([0.56, 0.03, 0.20, 0.07])
 btn_toggle = Button(ax_toggle, '切换纵坐标')
 btn_toggle.on_clicked(toggle_scale)
+
+ax_cal = plt.axes([0.76, 0.03, 0.20, 0.07])
+btn_cal = Button(ax_cal, '计算关键值')
+btn_cal.on_clicked(cal)
 
 # ----------------------------
 # 9. 事件绑定

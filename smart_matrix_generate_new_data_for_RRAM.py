@@ -33,7 +33,7 @@ def sci_notation(y, pos):
 # 1. 从CSV提取矩阵
 # ----------------------------
 #importfile = r"E:\融合2\实验数据\2025-12-13\1-25-7_merged_clean.csv"
-importfile = r"E:\融合2\实验数据\2026-1-8\RESET_0-(-3)-0 [(5) ; 2026_1_8 18_37_50]-D6_clean.csv"
+importfile = r"E:\融合2\实验数据\2026-1-29-mostuihuobyothers\Trans [(25) ; 2026_1_29 10_28_40]-multidevice_clean.csv"
 # 读取CSV并强制转换为数值类型，无法转换的值会变为NaN
 matrix_df = pd.read_csv(importfile, header=None, low_memory=False)
 matrix = matrix_df.apply(pd.to_numeric, errors='coerce').to_numpy()

@@ -10,8 +10,10 @@ def process_csv(importfile):
     :return: 处理后的数据保存的文件路径
     """
     max_col = 8  # 最大列数
-    x_col = 1    # x轴数据所在列，从0开始计数
-    y_col = 7    # y轴数据所在列
+    
+    # Initial default values for x_col and y_col
+    current_x_col = 1
+    current_y_col = 5
 
     column_names = [f"col{i}" for i in range(max_col)]
     try:
@@ -31,27 +33,42 @@ def process_csv(importfile):
             encoding='latin1'
         )
 
-
     # 提取 DataValue 段落
     groups = []
     current_x, current_y = [], []
 
-    for _, row in df.iterrows():
+    for index, row in df.iterrows():
+        # Check col1 for dynamic x_col and y_col settings
+        # The instruction states "读到1T1R_set之后" and "读到 1R_reset后", meaning the setting changes
+        # *after* these are read, and persists. So, update only when these specific strings are found.
+        # Use `str(row['col1'])` to handle potential non-string types in 'col1' robustly.
+        if pd.notna(row['col1']): 
+            col1_str = str(row['col1'])
+            if '1T1R_set' in col1_str:
+                current_x_col = 1
+                current_y_col = 5
+            elif '1T1R_reset' in col1_str:
+                current_x_col = 1
+                current_y_col = 7
+            # If neither, current_x_col and current_y_col retain their values from the previous row or initial defaults.
+
         if row['col0'] == 'DataValue':
             try:
-                x = float(row[f"col{x_col}"])
-                y = float(row[f"col{y_col}"])
+                # Use the dynamically determined current_x_col and current_y_col
+                x = float(row[f"col{current_x_col}"])
+                y = float(row[f"col{current_y_col}"])
                 current_x.append(x)
                 current_y.append(y)
             except (ValueError, TypeError):
                 continue
         else:
-            if current_x:  # 遇到分隔，存一组
+            if not np.isnan(current_y).all():  # 遇到分隔，且y不全是NaN，存一组
                 groups.append((np.array(current_x), np.array(current_y)))
-                current_x, current_y = [], []
+            # 无论如何都重置
+            current_x, current_y = [], []
 
-    # 最后如果有数据也加进去
-    if current_x:
+    # 最后如果有数据也加进去, 且y不为空
+    if not np.isnan(current_y).all():  # 遇到分隔，且y不全是NaN，存一组
         groups.append((np.array(current_x), np.array(current_y)))
 
     if not groups:
@@ -78,7 +95,7 @@ def process_csv(importfile):
 
 if __name__ == "__main__":
     # 保留单个文件处理功能
-    importfile = r"F:\2026-02-02-Graphene\1T1R_reset [(2) ; 2_2_2026 11_24_34 AM]-d5middle.csv"
+    importfile = r"F:\2026-02-02-Graphene\1T1R_reset [(1) ; 2_2_2026 10_59_08 AM]-D2-20CYCLE.csv"
     if os.path.exists(importfile):
         process_csv(importfile)
     else:

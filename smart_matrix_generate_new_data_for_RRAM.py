@@ -33,7 +33,7 @@ def sci_notation(y, pos):
 # 1. 从CSV提取矩阵
 # ----------------------------
 #importfile = r"E:\融合2\实验数据\2025-12-13\1-25-7_merged_clean.csv"
-importfile = r"E:\融合2\实验数据\2026-1-29-mostuihuobyothers\Trans [(25) ; 2026_1_29 10_28_40]-multidevice_clean.csv"
+importfile = r"E:\融合2\实验数据\2026-02-03-Graphene\1T1R_reset [(3) ; 2_2_2026 11_12_23 AM]-d4middle_clean.csv"
 # 读取CSV并强制转换为数值类型，无法转换的值会变为NaN
 matrix_df = pd.read_csv(importfile, header=None, low_memory=False)
 matrix = matrix_df.apply(pd.to_numeric, errors='coerce').to_numpy()
@@ -171,6 +171,8 @@ def save(event):
     folder = "B1500_data_storage"
     os.makedirs(folder, exist_ok=True)  # 如果文件夹不存在则创建
     fname = os.path.join(folder, f"filtered_matrix_{n_curves}curves_generated_{timestamp}.csv")
+    np.savetxt(fname, matrix, delimiter=",", fmt="%.6e")
+    print(f"矩阵数据已保存到 {fname}")
 
 def save_resistance(event):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
